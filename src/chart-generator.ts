@@ -1,11 +1,23 @@
 import { Chart, registerables, ChartConfiguration, ChartItem } from 'chart.js';
-import ChartDataLabels from 'chartjs-plugin-datalabels';
+import ChartDataLabels from 'chartjs-plugin-datalabels/dist/chartjs-plugin-datalabels.esm.js';
 import { createCanvas } from 'canvas';
 import * as fs from 'fs';
 import * as path from 'path';
 
 // Register Chart.js components
 Chart.register(...registerables);
+
+let chartDataLabelsRegistered = false;
+
+function ensureChartDataLabelsRegistered() {
+  if (chartDataLabelsRegistered) return;
+  // Keep datalabels inert unless explicitly configured per-chart.
+  // This avoids affecting charts that don't want labels and prevents issues on non-cartesian charts.
+  // (If a chart does provide plugins.datalabels config, it will override this.)
+  (Chart.defaults.plugins as any).datalabels = { display: false };
+  Chart.register(ChartDataLabels);
+  chartDataLabelsRegistered = true;
+}
 
 type OutputFormat = 'png' | 'html';
 
@@ -115,13 +127,18 @@ export async function generateChart(
     const canvas = createCanvas(width, height);
     const ctx = canvas.getContext('2d');
 
-    // Create the chart directly with cleanedConfig - Chart.js will handle detailed validation
-    const wantsDataLabels = Boolean((cleanedConfig as any)?.options?.plugins?.datalabels);
-    const configWithPlugins: ChartConfiguration = wantsDataLabels
-      ? ({ ...cleanedConfig, plugins: [...(cleanedConfig.plugins ?? []), ChartDataLabels] } as ChartConfiguration)
-      : cleanedConfig;
+    // If caller provided plugins.datalabels config, ensure plugin is registered.
+    const datalabelsConfig = (cleanedConfig as any)?.options?.plugins?.datalabels;
+    const wantsDataLabels = Boolean(datalabelsConfig);
+    if (wantsDataLabels) {
+      ensureChartDataLabelsRegistered();
+      if (typeof datalabelsConfig === 'object' && datalabelsConfig.display === undefined) {
+        // Keep backwards compatibility: presence of a config object implies labels are desired.
+        datalabelsConfig.display = true;
+      }
+    }
 
-    const chart = new Chart(ctx as unknown as ChartItem, configWithPlugins);
+    const chart = new Chart(ctx as unknown as ChartItem, cleanedConfig);
 
     const buffer = canvas.toBuffer('image/png');
 
