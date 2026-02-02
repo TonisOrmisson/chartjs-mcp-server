@@ -1,4 +1,5 @@
 import { Chart, registerables, ChartConfiguration, ChartItem } from 'chart.js';
+import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { createCanvas } from 'canvas';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -26,6 +27,7 @@ type ChartGenerationResult = ChartGenerationSuccess | ChartGenerationError;
 
 function generateHtmlSnippet(chartConfig: ChartConfiguration): string {
   const uniqueId = `chart-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const wantsDataLabels = Boolean((chartConfig as any)?.options?.plugins?.datalabels);
   
   const template = `<div id="chart-container-${uniqueId}" style="width: 800px; height: 400px; margin: 0 auto; position: relative;">
   <canvas id="chart-${uniqueId}"></canvas>
@@ -34,12 +36,33 @@ function generateHtmlSnippet(chartConfig: ChartConfiguration): string {
       if (typeof Chart === 'undefined') {
         const script = document.createElement('script');
         script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.5.0';
-        script.onload = function() { createChart(); };
+        script.onload = function() { ensurePluginsThenCreateChart(); };
         document.head.appendChild(script);
       } else {
-        createChart();
+        ensurePluginsThenCreateChart();
       }
       
+      function ensurePluginsThenCreateChart() {
+        ${wantsDataLabels ? `
+        // Load and register chartjs-plugin-datalabels when used by config
+        if (typeof ChartDataLabels === 'undefined') {
+          const dlScript = document.createElement('script');
+          dlScript.src = 'https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0';
+          dlScript.onload = function() {
+            if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
+              Chart.register(ChartDataLabels);
+            }
+            createChart();
+          };
+          document.head.appendChild(dlScript);
+          return;
+        }\n` : ''}
+        if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
+          Chart.register(ChartDataLabels);
+        }
+        createChart();
+      }
+
       function createChart() {
         const ctx = document.getElementById('chart-${uniqueId}').getContext('2d');
         const config = ${JSON.stringify(chartConfig, null, 2)};
@@ -93,7 +116,12 @@ export async function generateChart(
     const ctx = canvas.getContext('2d');
 
     // Create the chart directly with cleanedConfig - Chart.js will handle detailed validation
-    const chart = new Chart(ctx as unknown as ChartItem, cleanedConfig);
+    const wantsDataLabels = Boolean((cleanedConfig as any)?.options?.plugins?.datalabels);
+    const configWithPlugins: ChartConfiguration = wantsDataLabels
+      ? ({ ...cleanedConfig, plugins: [...(cleanedConfig.plugins ?? []), ChartDataLabels] } as ChartConfiguration)
+      : cleanedConfig;
+
+    const chart = new Chart(ctx as unknown as ChartItem, configWithPlugins);
 
     const buffer = canvas.toBuffer('image/png');
 

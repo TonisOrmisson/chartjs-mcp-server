@@ -61,6 +61,7 @@
     "@modelcontextprotocol/sdk": "^1.13.3",
     "canvas": "^3.1.2",
     "chart.js": "^4.5.0",
+    "chartjs-plugin-datalabels": "^2.2.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
